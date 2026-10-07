@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SignLens – Sign Language Recognition & Real-Time Translation</title>
+<meta name="description" content="Recognise hand signs from your webcam, turn them into text, and speak them aloud. Teach it your own signs. Runs fully in the browser.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤟</text></svg>">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f2f4ff;--card:#fff;--ink:#1d1b4b;--mute:#5d6086;--line:#d9dcf2;--accent:#2b6cff;--rec:#ff5a5f;--ok:#12a37f}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1030;--card:#1a1b45;--ink:#eceeff;--mute:#a4a8d6;--line:#32346a}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1,h2,h3{font-family:Manrope,system-ui,sans-serif;margin:0;letter-spacing:-.03em}
+header{max-width:1180px;margin:auto;padding:28px 24px 6px;display:flex;justify-content:space-between;align-items:end;gap:14px;flex-wrap:wrap}
+h1{font-size:clamp(34px,6vw,58px);font-weight:800;line-height:1}
+header p{margin:0;color:var(--mute);max-width:46ch}
+main{max-width:1180px;margin:16px auto 24px;padding:0 24px;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.stage{position:relative;aspect-ratio:4/3;background:#0a0b24;border-radius:12px;overflow:hidden}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.msg{position:absolute;inset:0;display:grid;place-items:center;color:#d5d8ff;text-align:center;padding:24px}
+.caption{position:absolute;left:0;right:0;bottom:0;padding:14px 16px;background:linear-gradient(transparent,#000c);color:#fff}
+.caption b{font:800 clamp(26px,5vw,40px)/1 Manrope,system-ui;display:block}
+.bar{height:5px;background:#fff3;border-radius:9px;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .08s}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px}
+button,input{font:inherit;color:inherit}
+button{background:var(--accent);color:#fff;border:0;border-radius:9px;padding:9px 15px;font-weight:700;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.rec{background:var(--rec)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=text]{background:transparent;border:1px solid var(--line);border-radius:9px;padding:9px 11px;min-width:0;flex:1}
+:focus-visible{outline:3px solid var(--rec);outline-offset:2px}
+.status{margin-top:10px;font-size:13px;color:var(--mute)}
+.out{min-height:92px;border:1px dashed var(--line);border-radius:12px;padding:12px;font:700 24px/1.3 Manrope,system-ui;word-break:break-word}
+.out.empty{color:var(--mute);font:500 15px/1.5 system-ui}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:18px 0 12px}
+.tabs button{background:none;color:var(--mute);border-radius:8px 8px 0 0;padding:8px 12px}
+.tabs button[aria-selected=true]{color:var(--ink);box-shadow:inset 0 -3px var(--accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.sign{border:1px solid var(--line);border-radius:10px;padding:8px 10px}.sign b{display:block}.sign span{color:var(--mute);font-size:13px}
+label.chk{display:flex;align-items:center;gap:6px;color:var(--mute)}
+small{color:var(--mute);display:block;margin-top:10px}
+.mine{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.mine button{padding:4px 10px}
+footer{max-width:1180px;margin:0 auto;padding:20px 24px 36px;border-top:1px solid var(--line);color:var(--mute);text-align:center}footer b{color:var(--ink)}
+</style>
+</head>
+<body>
+<header>
+  <h1>SignLens</h1>
+  <p>Show a hand sign to your webcam. SignLens turns it into text and speaks it. Video never leaves your device.</p>
+</header>
+
+<main>
+  <section class="panel" aria-label="Camera">
+    <div class="stage">
+      <video id="video" muted playsinline></video>
+      <canvas id="cv"></canvas>
+      <div class="msg" id="stageMsg"><span>Press <b>Start camera</b> and hold one hand in view.</span></div>
+      <div class="caption"><b id="live">–</b><div class="bar"><i id="prog"></i></div></div>
+    </div>
+    <div class="row"><button id="btnCam">Start camera</button></div>
+    <div class="status" id="status">Ready.</div>
+  </section>
+
+  <section class="panel" aria-label="Translation">
+    <h3>Translation</h3>
+    <div class="out empty" id="out" aria-live="polite">Signs you hold steady for half a second appear here.</div>
+    <div class="row">
+      <button id="btnSpeak">Speak</button>
+      <button class="ghost" id="btnSpace">Add space</button>
+      <button class="ghost" id="btnBack">Undo</button>
+      <button class="ghost" id="btnClear">Clear</button>
+      <label class="chk"><input type="checkbox" id="auto" checked>Speak each sign</label>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button role="tab" data-tab="guide" aria-selected="true">Starter signs</button>
+      <button role="tab" data-tab="teach" aria-selected="false">Teach a sign</button>
+    </div>
+
+    <div id="tab-guide"><div class="grid" id="guide"></div>
+      <small>Starter signs are static hand shapes. Real sign languages (ASL, BdSL, ISL) also use motion and facial expression, so use “Teach a sign” to add the signs you need.</small></div>
+
+    <div id="tab-teach" hidden>
+      <div class="row" style="margin-top:0"><input type="text" id="tName" placeholder="Word or phrase, e.g. Water" maxlength="30">
+        <button class="rec" id="btnRec" disabled>Record</button></div>
+      <small>Hold the sign steady in view and click Record. It captures 30 frames. Record 2–3 times, changing distance and angle a little.</small>
+      <div id="mine" style="margin-top:12px"></div>
+    </div>
+  </section>
+</main>
+<footer>Made by <b>Sudipto Acharjee Dhrubo</b></footer>
+
+<script src="mp/hands.js"></script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const video = $('video'), cv = $('cv'), ctx = cv.getContext('2d');
+const HOLD = 12, KNN_MAX = 0.16;
+const store = { get: () => { try { return JSON.parse(localStorage.getItem('signlens.samples')) || [] } catch { return [] } }, set: v => localStorage.setItem('signlens.samples', JSON.stringify(v)) };
+let samples = store.get(), words = [], camOn = false, cand = '', count = 0, armed = true, recLeft = 0, recLabel = '';
+
+// ---- built-in finger-shape signs: thumb,index,middle,ring,pinky (1 = extended)
+const BUILT = { '11111': ['Hello', 'Open palm, fingers spread'], '00000': ['Yes', 'Closed fist'], '10000': ['Good', 'Thumbs up'],
+  '11001': ['I love you', 'Thumb, index and pinky out'], '01100': ['Peace', 'Index and middle up'], '01000': ['You', 'Point with index finger'],
+  '10001': ['Call me', 'Thumb and pinky out'], '00001': ['I', 'Only pinky up'], 'OK': ['OK', 'Thumb and index touch, others up'] };
+$('guide').innerHTML = Object.values(BUILT).map(([n, d]) => `<div class="sign"><b>${n}</b><span>${d}</span></div>`).join('');
+
+const d2 = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z - b.z) * .5);
+function fingers(l) {
+  const ext = (t, p) => d2(l[t], l[0]) > d2(l[p], l[0]) * 1.12;
+  const thumb = d2(l[4], l[17]) > d2(l[3], l[17]) * 1.05 && d2(l[4], l[5]) > d2(l[3], l[5]) * 1.15;
+  return [thumb, ext(8, 6), ext(12, 10), ext(16, 14), ext(20, 18)];
+}
+function builtIn(l) {
+  const f = fingers(l), size = d2(l[0], l[9]);
+  if (d2(l[4], l[8]) < size * .35 && f[2] && f[3] && f[4]) return BUILT.OK[0];
+  const k = f.map(x => +x).join(''); return BUILT[k]?.[0] || null;
+}
+// ---- custom signs: nearest neighbours on wrist-relative, size-normalised landmarks
+function feat(l) {
+  const s = Math.max(d2(l[0], l[9]), 1e-4), o = [];
+  for (const p of l) o.push((p.x - l[0].x) / s, (p.y - l[0].y) / s, (p.z - l[0].z) / s);
+  return o;
+}
+function custom(l) {
+  if (!samples.length) return null;
+  const f = feat(l), sc = samples.map(s => ({ label: s.label, d: Math.sqrt(s.f.reduce((a, v, i) => a + (v - f[i]) ** 2, 0) / 21) / 2.2 })).sort((a, b) => a.d - b.d).slice(0, 5);
+  if (sc[0].d > KNN_MAX) return null;
+  const votes = {}; sc.forEach(s => votes[s.label] = (votes[s.label] || 0) + 1);
+  return Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0];
+}
+
+// ---- UI helpers
+const say = t => { if ('speechSynthesis' in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(t)) } };
+function renderOut() { const o = $('out'), t = words.join(''); o.classList.toggle('empty', !t); o.textContent = t || 'Signs you hold steady for half a second appear here.' }
+function renderMine() {
+  const by = {}; samples.forEach(s => by[s.label] = (by[s.label] || 0) + 1);
+  $('mine').innerHTML = Object.keys(by).map(k => `<div class="mine"><span><b>${k}</b> · ${by[k]} samples</span><button class="ghost" data-del="${k}">Delete</button></div>`).join('') || '<small>No custom signs yet.</small>';
+}
+$('mine').onclick = e => { const k = e.target.dataset.del; if (k) { samples = samples.filter(s => s.label !== k); store.set(samples); renderMine() } };
+function commit(w) { words.push(w + ' '); renderOut(); if ($('auto').checked) say(w) }
+$('btnSpeak').onclick = () => say(words.join('') || 'Nothing to speak');
+$('btnSpace').onclick = () => { words.push(' '); renderOut() };
+$('btnBack').onclick = () => { words.pop(); renderOut() };
+$('btnClear').onclick = () => { words = []; renderOut() };
+document.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => document.querySelectorAll('[data-tab]').forEach(x => { x.setAttribute('aria-selected', x === b); $('tab-' + x.dataset.tab).hidden = x !== b }));
+$('btnRec').onclick = () => {
+  const n = $('tName').value.trim(); if (!n) return $('status').textContent = 'Type the word for this sign first.';
+  recLabel = n; recLeft = 30; $('btnRec').disabled = true; $('status').textContent = 'Recording… hold the sign steady.';
+};
+
+// ---- MediaPipe Hands
+const hands = new Hands({ locateFile: f => 'mp/' + f });
+hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: .6, minTrackingConfidence: .5 });
+hands.onResults(r => {
+  cv.width = video.videoWidth; cv.height = video.videoHeight; ctx.clearRect(0, 0, cv.width, cv.height);
+  const l = r.multiHandLandmarks?.[0];
+  if (!l) { cand = ''; count = 0; armed = true; $('live').textContent = '–'; $('prog').style.width = '0'; return }
+  drawHand(l);
+  if (recLeft > 0) {
+    samples.push({ label: recLabel, f: feat(l).map(v => +v.toFixed(3)) }); recLeft--;
+    $('live').textContent = `Recording ${30 - recLeft}/30`; $('prog').style.width = (30 - recLeft) / 30 * 100 + '%';
+    if (!recLeft) { store.set(samples); renderMine(); $('btnRec').disabled = false; $('status').textContent = `Saved “${recLabel}”. Record again from another angle for better accuracy.` }
+    return;
+  }
+  const label = custom(l) || builtIn(l);
+  if (!label) { cand = ''; count = 0; armed = true; $('live').textContent = '…'; $('prog').style.width = '0'; return }
+  if (label === cand) count++; else { cand = label; count = 1; armed = true }
+  $('live').textContent = label; $('prog').style.width = Math.min(count / HOLD, 1) * 100 + '%';
+  if (count >= HOLD && armed) { armed = false; commit(label) }
+});
+const LINKS = [[0,1,2,3,4],[0,5,6,7,8],[9,10,11,12],[13,14,15,16],[0,17,18,19,20],[5,9,13,17]];
+function drawHand(l) {
+  ctx.lineWidth = 4; ctx.strokeStyle = '#7fa4ff'; ctx.fillStyle = '#fff';
+  LINKS.forEach(c => { ctx.beginPath(); c.forEach((i, k) => { const x = l[i].x * cv.width, y = l[i].y * cv.height; k ? ctx.lineTo(x, y) : ctx.moveTo(x, y) }); ctx.stroke() });
+  l.forEach(p => { ctx.beginPath(); ctx.arc(p.x * cv.width, p.y * cv.height, 4, 0, 7); ctx.fill() });
+}
+
+let loopOn = false;
+async function pump() { if (!camOn) { loopOn = false; return } loopOn = true; try { await hands.send({ image: video }) } catch (e) { $('status').textContent = 'Tracking error: ' + e.message } requestAnimationFrame(pump) }
+$('btnCam').onclick = async () => {
+  if (camOn) { video.srcObject.getTracks().forEach(t => t.stop()); camOn = false; $('stageMsg').hidden = false; $('btnCam').textContent = 'Start camera'; $('btnRec').disabled = true; return }
+  try {
+    if (location.protocol === 'file:') return $('status').textContent = 'This page was opened as a file. Open your https Vercel link instead, or run a local server (python3 -m http.server 3000, then visit http://localhost:3000).';
+    $('status').textContent = 'Opening camera…';
+    video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } }); await video.play();
+    $('status').textContent = 'Loading hand-tracking model (first time takes a few seconds)…'; try { const r = await fetch('mp/hands.binarypb'); if (!r.ok) throw 0 } catch { video.srcObject.getTracks().forEach(t => t.stop()); return $('status').textContent = 'Model files not found. On GitHub, check that the “mp” folder is at the top level next to index.html and fully uploaded.' }
+    await hands.initialize();
+    camOn = true; $('stageMsg').hidden = true; $('btnCam').textContent = 'Stop camera'; $('btnRec').disabled = false; $('status').textContent = 'Tracking. Show one hand to the camera.';
+    if (!loopOn) pump();
+  } catch (e) { if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop()); $('status').textContent = 'Could not start (' + e.message + '). Allow camera access, and open the page from the https link or localhost, not as a file.' }
+};
+renderMine(); renderOut();
+})();
+</script>
+</body>
+</html>
